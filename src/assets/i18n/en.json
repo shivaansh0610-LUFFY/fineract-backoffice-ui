@@ -248,6 +248,7 @@
     "PRODUCT": "Product",
     "RENDER_TIME": "Render Time",
     "REQUIRED": "This field is required",
+    "COMPLETE_REQUIRED_FIELDS": "Complete the required fields to continue",
     "RESET": "Reset",
     "RETRY": "Try again",
     "REVERSED": "Reversed",
