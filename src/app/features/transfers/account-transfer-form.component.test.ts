@@ -180,4 +180,84 @@ describe('AccountTransferFormComponent', () => {
     component.onCancel();
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/clients']);
   });
+
+  // Regression coverage for #585: required fields carried no visible marker, and an invalid
+  // field produced no on-screen message even after the user interacted with it.
+  describe('required-field feedback', () => {
+    it('marks every required field and leaves the optional description unmarked', () => {
+      fixture.detectChanges();
+
+      const html = (fixture.nativeElement as HTMLElement).innerHTML;
+      const markerCount = (html.match(/class="required-marker"/g) ?? []).length;
+      // fromOfficeId, fromClientId, fromAccountType, fromAccountId,
+      // toOfficeId, toClientId, toAccountType, toAccountId, transferAmount.
+      expect(markerCount).toBe(9);
+    });
+
+    it('shows no field error until the user has touched the field', () => {
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="transfer-amount-error"]')).toBeNull();
+    });
+
+    it('shows the required message once an empty required field is blurred', () => {
+      fixture.detectChanges();
+
+      const amountInput = fixture.nativeElement.querySelector('#transfer-amount-input')!;
+      amountInput.dispatchEvent(new CustomEvent('ionBlur'));
+      fixture.detectChanges();
+
+      const error = fixture.nativeElement.querySelector('[data-testid="transfer-amount-error"]');
+      expect(error).not.toBeNull();
+      // provideTranslateTesting() loads no catalogue, so the pipe renders the key itself.
+      expect(error!.textContent).toContain('COMMON.REQUIRED');
+    });
+
+    it('hides the field error again once the field is filled in', () => {
+      fixture.detectChanges();
+      const amountInput = fixture.nativeElement.querySelector('#transfer-amount-input')!;
+      amountInput.dispatchEvent(new CustomEvent('ionBlur'));
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="transfer-amount-error"]')).not.toBeNull();
+
+      // Go through the same event the CVA itself listens for (it reads `$event.target.value`,
+      // not `detail`), rather than mutating the bound property directly, so this exercises
+      // what a real keystroke does.
+      (amountInput as HTMLInputElement).value = '100';
+      amountInput.dispatchEvent(new CustomEvent('ionInput'));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="transfer-amount-error"]')).toBeNull();
+    });
+
+    it('shows a hint next to the submit button while the form is incomplete', async () => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const hint = fixture.nativeElement.querySelector('[data-testid="transfer-submit-hint"]');
+      expect(hint).not.toBeNull();
+      expect(hint!.textContent).toContain('COMMON.COMPLETE_REQUIRED_FIELDS');
+    });
+
+    it('hides the submit hint once every required field is filled in', async () => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      component.request.fromOfficeId = '1';
+      component.request.fromClientId = '10';
+      component.request.fromAccountType = '2';
+      component.request.fromAccountId = '22';
+      component.request.toOfficeId = '1';
+      component.request.toClientId = '10';
+      component.request.toAccountType = '2';
+      component.request.toAccountId = '22';
+      component.request.transferAmount = '100';
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="transfer-submit-hint"]')).toBeNull();
+    });
+  });
 });
