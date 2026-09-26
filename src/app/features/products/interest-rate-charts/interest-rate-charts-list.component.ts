@@ -22,16 +22,30 @@ import { Router } from '@angular/router';
 import { TranslateModule } from '@ngx-translate/core';
 import { ColumnDef, CellTemplateDirective } from '../../../shared';
 import { DataTableComponent } from '../../../shared/components/data-table/data-table.component';
-import { InterestRateChartService, GetInterestRateChartsResponse } from '../../../api';
+import {
+  FixedDepositProductService,
+  GetInterestRateChartsResponse,
+  InterestRateChartService,
+  RecurringDepositProductService,
+} from '../../../api';
 import { I18N } from '../../../core/adapters';
 import { DialogService } from '../../../core/services/dialog.service';
 import { TooltipDirective } from '../../../shared/directives/tooltip.directive';
 import { ButtonComponent } from '../../../ui/button/button.component';
+import { forkJoin, of } from 'rxjs';
+import { catchError, map, switchMap } from 'rxjs/operators';
 
 /**
- * Lists interest rate charts. Charts are master-data records that group interest-rate
- * slabs (interest bands), so the table uses local pagination. Supports create, edit,
- * delete, plus drill-down to a chart's slabs.
+ * Lists interest rate charts across the deposit products that own them.
+ *
+ * Charts are master-data records grouping interest-rate slabs (interest bands), so the table
+ * uses local pagination. Supports create, edit, delete, plus drill-down to a chart's slabs.
+ *
+ * The charts are gathered per product rather than in one call. `productId` is documented as
+ * optional, but the platform answers a bare `GET /interestratecharts` with a 500 — this screen
+ * used to make exactly that call, so it failed on every visit, showing "No records found." under
+ * a toast carrying the raw request URL. A chart cannot exist without a product, so asking each
+ * product for its own is both the working form of the question and the accurate one.
  */
 @Component({
   selector: 'app-interest-rate-charts-list',
@@ -53,7 +67,10 @@ import { ButtonComponent } from '../../../ui/button/button.component';
       [data]="charts()"
       [totalRecords]="charts().length"
       [localLogic]="true"
+      [isLoading]="isLoading()"
+      [hasError]="loadFailed()"
       (create)="onCreate()"
+      (retry)="load()"
     >
       <ng-template appCellTemplate="actions" let-row>
         <app-button
@@ -89,6 +106,8 @@ import { ButtonComponent } from '../../../ui/button/button.component';
 })
 export class InterestRateChartsListComponent implements OnInit {
   private readonly chartService = inject(InterestRateChartService);
+  private readonly fixedDepositProducts = inject(FixedDepositProductService);
+  private readonly recurringDepositProducts = inject(RecurringDepositProductService);
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
   private readonly i18n = inject(I18N);
@@ -101,20 +120,56 @@ export class InterestRateChartsListComponent implements OnInit {
   ];
 
   readonly charts = signal<GetInterestRateChartsResponse[]>([]);
+  readonly isLoading = signal(false);
+  readonly loadFailed = signal(false);
 
   ngOnInit(): void {
     this.load();
   }
 
   load(): void {
-    this.chartService.getInterestratecharts().subscribe({
-      next: (data: GetInterestRateChartsResponse[]) => {
-        this.charts.set(data || []);
-      },
-      error: (err: unknown) => {
-        console.error('Failed to load interest rate charts', err);
-      },
-    });
+    this.isLoading.set(true);
+    this.loadFailed.set(false);
+    this.depositProductIds()
+      .pipe(
+        switchMap((productIds) =>
+          productIds.length === 0
+            ? of([] as GetInterestRateChartsResponse[])
+            : forkJoin(
+                productIds.map((productId) =>
+                  // One product's charts failing must not blank the rest of the table.
+                  this.chartService
+                    .getInterestratecharts(productId)
+                    .pipe(catchError(() => of([] as GetInterestRateChartsResponse[]))),
+                ),
+              ).pipe(map((perProduct) => perProduct.flat())),
+        ),
+      )
+      .subscribe({
+        next: (data) => {
+          this.charts.set(data);
+          this.isLoading.set(false);
+        },
+        error: () => {
+          this.charts.set([]);
+          this.isLoading.set(false);
+          this.loadFailed.set(true);
+        },
+      });
+  }
+
+  /** The products that can own a chart: fixed and recurring deposits. */
+  private depositProductIds() {
+    return forkJoin({
+      fixed: this.fixedDepositProducts.getFixeddepositproducts(),
+      recurring: this.recurringDepositProducts.getRecurringdepositproducts(),
+    }).pipe(
+      map(({ fixed, recurring }) =>
+        [...(fixed ?? []), ...(recurring ?? [])]
+          .map((product) => product?.id)
+          .filter((id): id is number => typeof id === 'number'),
+      ),
+    );
   }
 
   onCreate(): void {

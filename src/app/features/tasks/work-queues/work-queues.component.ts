@@ -51,7 +51,10 @@ import { FINERACT_DATE_FORMAT, formatDateToFineract } from '../../../core/utils/
 const LOAN_STATUS = { pendingApproval: 100, approvedAwaitingDisbursal: 200 } as const;
 
 interface QueueRow {
+  /** The id the queue's command addresses — for reschedules, the request rather than the loan. */
   id: number;
+  /** The id `openRecord` navigates to, when that is not the same thing. */
+  recordId?: number;
   primary: string;
   secondary: string;
   amount?: number;
@@ -508,6 +511,9 @@ export class WorkQueuesComponent implements OnInit {
         this.rows.set(
           items.map((request) => ({
             id: request.id as number,
+            // The row's `id` is the reschedule *request*, which is what the batch command below
+            // addresses. Opening the record needs the loan, and they are different numbers.
+            recordId: request.loanId,
             primary: request.loanAccountNumber ?? `${request.id}`,
             secondary: request.clientName ?? '',
             amount: undefined,
@@ -533,11 +539,16 @@ export class WorkQueuesComponent implements OnInit {
     this.rows.update((rows) => rows.map((row) => ({ ...row, selected: checked })));
   }
 
+  /**
+   * Opens the record a row stands for.
+   *
+   * `recordId` exists because the reschedule queue's `id` is the request, not the loan — routing
+   * every non-client queue to `['/loans/view', row.id]` opened a different loan, or none.
+   */
   openRecord(row: QueueRow): void {
+    const id = row.recordId ?? row.id;
     const target =
-      this.activeQueue() === 'clientActivation'
-        ? ['/clients/view', row.id]
-        : ['/loans/view', row.id];
+      this.activeQueue() === 'clientActivation' ? ['/clients/view', id] : ['/loans/view', id];
     void this.router.navigate(target);
   }
 
@@ -655,7 +666,10 @@ interface ClientQueueItem {
 }
 
 interface RescheduleQueueItem {
+  /** The reschedule request. `POST rescheduleloans/{id}?command=…` addresses this. */
   id?: number;
+  /** The loan the request is against — a different number, and the one to navigate to. */
+  loanId?: number;
   loanAccountNumber?: string;
   clientName?: string;
 }

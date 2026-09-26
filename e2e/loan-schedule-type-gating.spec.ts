@@ -40,6 +40,7 @@ const CAPITALIZED_TAB = 'Capitalized Income';
 
 interface LoanOverrides {
   loanScheduleType?: { code: string; value: string };
+  externalId?: string | null;
   enableBuyDownFee?: boolean;
   enableIncomeCapitalization?: boolean;
   chargedOff?: boolean;
@@ -99,12 +100,19 @@ async function loginWithLoan(page: Page, overrides: LoanOverrides): Promise<Prob
     });
   });
 
-  await page.route(/\/api\/v1\/loans\/external-id\/[^/]+\/buydown-fees/, async (route) => {
+  /*
+   * Addressed by loan id, not external id. Both tabs used to fetch through
+   * `/loans/external-id/{externalId}/…` and so were gated on the loan *having* an external id,
+   * which is optional — on a loan without one the tab appeared and stayed permanently empty.
+   * These routes deliberately do not match the external-id form, so a regression back to it
+   * leaves the counters at zero and fails here.
+   */
+  await page.route(/\/api\/v1\/loans\/\d+\/buydown-fees/, async (route) => {
     probe.buyDownCalls += 1;
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
 
-  await page.route(/\/api\/v1\/loans\/external-id\/[^/]+\/capitalized-incomes/, async (route) => {
+  await page.route(/\/api\/v1\/loans\/\d+\/capitalized-incomes/, async (route) => {
     probe.capitalizedCalls += 1;
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
   });
@@ -162,6 +170,28 @@ test.describe('Loan schedule type gating', () => {
 
     await expect.poll(() => probe.buyDownCalls).toBeGreaterThan(0);
     expect(probe.capitalizedCalls).toBe(0);
+  });
+
+  /*
+   * External ids are optional. The fetch used to require one, so on a loan without one the tab
+   * rendered and stayed empty forever with the error swallowed — indistinguishable from a loan
+   * that genuinely has no buy-down fees.
+   */
+  test('fetches buy-down fees for a progressive loan that has no external id', async ({ page }) => {
+    const probe = await loginWithLoan(page, {
+      loanScheduleType: { code: 'PROGRESSIVE', value: 'Progressive' },
+      enableBuyDownFee: true,
+      externalId: null,
+    });
+
+    await page.goto('/loans/view/456');
+    await expect(tab(page, BUY_DOWN_TAB)).toBeVisible();
+
+    await expect
+      .poll(() => probe.buyDownCalls, {
+        message: 'no request was made — the fetch is still gated on the external id',
+      })
+      .toBeGreaterThan(0);
   });
 
   test('a progressive loan with both capabilities shows both', async ({ page }) => {

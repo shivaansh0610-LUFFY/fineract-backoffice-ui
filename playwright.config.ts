@@ -52,7 +52,22 @@ const MOBILE_SPECS = ['mobile-shell.spec.ts'];
  */
 const DUAL_VIEWPORT_SPECS = ['guidance-tour.spec.ts', '**/*date-picker-revisit.spec.ts'];
 
+/**
+ * Backend specs that assert at more than one width.
+ *
+ * They set their viewport per `describe` with `test.use({ viewport })` rather than joining the
+ * `mobile` project, which runs against mocks and has no Fineract behind it. Layout and a real
+ * save are both being checked, so neither half can be dropped: a narrow-only run would pass a fix
+ * that stacked every desktop form into one column, and a wide-only run is what let the 320px
+ * collapse ship.
+ */
+const DUAL_VIEWPORT_BACKEND_SPECS = ['form-layout-reflow.spec.ts', 'report-mailing-job.spec.ts'];
+
 const BACKEND_SPECS = [
+  ...DUAL_VIEWPORT_BACKEND_SPECS,
+  'bulk-import-entity-types.spec.ts',
+  'delinquency-configuration.spec.ts',
+  'interest-rate-charts.spec.ts',
   'batch-api-operations.spec.ts',
   'center-servicing.spec.ts',
   'parity-screens.spec.ts',

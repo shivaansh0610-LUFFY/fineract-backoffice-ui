@@ -453,9 +453,18 @@ ion-segment-button ion-label {
   margin: 0 auto;
 }
 
+/*
+ * Two columns where there is room, one where there is not.
+ *
+ * `repeat(2, 1fr)` cannot narrow past its content: `1fr` resolves to `minmax(auto, 1fr)`, so the
+ * column holding the widest control keeps its intrinsic width and the other collapses. At 320px
+ * that produced 4px-wide fields on Create GL Account and pushed the right-hand column of Create
+ * Loan past the card. `min(240px, 100%)` is the floor a column may not shrink below *unless* the
+ * grid itself is narrower than 240px, at which point one column is all that fits.
+ */
 .form-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   gap: 16px;
 
   ion-item,
@@ -473,8 +482,54 @@ ion-segment-button ion-label {
   margin-top: 16px;
 }
 
+/*
+ * A labelled native control inside a `.form-grid`.
+ *
+ * The house style for forms is Ionic, but `src/app/ui/` has no input, select or checkbox
+ * primitive yet and ADR 0005 puts direct Ionic imports out of bounds for new feature code. Native
+ * controls are the accepted third option — `login.component.ts` has used them from the start —
+ * and this lifts that component's field styling to where a second form can share it rather than
+ * copying it.
+ */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-weight: 500;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  input,
+  select {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius);
+    background: var(--card-bg);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 0.9rem;
+    /* Without this a native control keeps its intrinsic width and re-creates the collapse the
+       grid above exists to avoid. */
+    min-width: 0;
+    width: 100%;
+  }
+
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 1px;
+  }
+}
+
 .full-width {
-  grid-column: span 2;
+  /* `span 2` would conjure a second column back when the grid has collapsed to one. */
+  grid-column: 1 / -1;
 
   ion-item,
   ion-input,

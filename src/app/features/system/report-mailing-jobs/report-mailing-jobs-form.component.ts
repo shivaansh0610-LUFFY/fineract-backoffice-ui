@@ -31,28 +31,99 @@ import {
   IonInput,
   IonItem,
   IonLabel,
+  IonNote,
+  IonSelect,
+  IonSelectOption,
   IonSpinner,
   IonTextarea,
 } from '@ionic/angular/standalone';
 import {
   ReportMailingJobsService,
+  ReportsService,
+  EnumOptionData,
+  GetReportsResponse,
   PostReportMailingJobsRequest,
   PutReportMailingJobsRequest,
 } from '../../../api';
+import { FINERACT_LOCALE } from '../../../core/utils/date-formatter';
 
 /**
- * Create / edit form for a report-mailing job. Kept to core fields (name, recipients,
- * subject, report id). The update endpoint accepts the same core fields server-side, so
- * the edit payload is built through a permissive local request shape.
+ * Create / edit form for a report-mailing job.
+ *
+ * `locale` is not optional decoration. `stretchyReportId` is a locale-sensitive parameter, so
+ * the platform refuses any payload carrying it without one — "[stretchyReportId] The parameter
+ * `stretchyReportId` requires a `locale` parameter to be passed with it". Both the create and the
+ * update payload omitted it, which meant neither had ever succeeded.
+ *
+ * `startDateTime` and `recurrence` are what make the job a *scheduled* job; without them the
+ * platform stores a row that never runs, so fixing `locale` alone would have traded a visible
+ * failure for a silent one.
  */
 type ReportMailingJobUpdate = PutReportMailingJobsRequest & {
   name?: string;
   description?: string;
   emailRecipients?: string;
   emailSubject?: string;
+  emailMessage?: string;
   stretchyReportId?: number;
+  emailAttachmentFileFormatId?: number;
+  startDateTime?: string;
+  recurrence?: string;
   isActive?: boolean;
+  locale?: string;
+  dateFormat?: string;
 };
+
+/**
+ * The attachment format, which the platform requires and the generated request model omits.
+ *
+ * Asking `POST /reportmailingjobs` for the minimum names four mandatory parameters:
+ * `startDateTime`, `emailMessage`, `emailAttachmentFileFormatId` and `dateFormat`. This form sent
+ * none of them.
+ */
+type ReportMailingJobCreate = PostReportMailingJobsRequest & {
+  emailAttachmentFileFormatId?: number;
+};
+
+/** The default cadence, and the one the recurrence picker starts on. */
+const DAILY_RECURRENCE = 'FREQ=DAILY;INTERVAL=1';
+
+/**
+ * `startDateTime` carries a time, so the payload's `dateFormat` has to as well.
+ *
+ * Not the `dd MMMM yyyy` this codebase uses everywhere else: with a time appended, the platform
+ * throws a 500 rather than parsing it. `yyyy-MM-dd HH:mm:ss` is the shape it accepts.
+ */
+const DATE_TIME_FORMAT = 'yyyy-MM-dd HH:mm:ss';
+
+/**
+ * The report the job is wired to.
+ *
+ * The generated model types `stretchyReport` as `object`, so the id has to be read defensively:
+ * a cast to a hand-written shape would go stale silently the next time the spec is regenerated.
+ */
+function reportIdOf(stretchyReport: object | undefined): number | undefined {
+  if (!stretchyReport || !('id' in stretchyReport)) {
+    return undefined;
+  }
+  const { id } = stretchyReport as { id?: unknown };
+  return typeof id === 'number' ? id : undefined;
+}
+
+/** Turns the `yyyy-MM-ddTHH:mm` an `<input type="datetime-local">` produces into that shape. */
+function toFineractDateTime(localValue: string): string | undefined {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(localValue);
+  return match ? `${match[1]} ${match[2]}:00` : undefined;
+}
+
+/** The inverse, for populating the control when editing. */
+function toDateTimeLocal(value: string | undefined): string {
+  if (!value) {
+    return '';
+  }
+  const match = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/.exec(value);
+  return match ? `${match[1]}T${match[2]}` : '';
+}
 
 @Component({
   selector: 'app-report-mailing-jobs-form',
@@ -71,6 +142,9 @@ type ReportMailingJobUpdate = PutReportMailingJobsRequest & {
     IonCardTitle,
     IonCard,
     IonCheckbox,
+    IonNote,
+    IonSelect,
+    IonSelectOption,
   ],
   template: `
     <div class="form-container">
@@ -134,16 +208,86 @@ type ReportMailingJobUpdate = PutReportMailingJobsRequest & {
 
             <ion-item fill="outline">
               <ion-label position="stacked">{{
+                'REPORT_MAILING_JOBS.EMAIL_MESSAGE' | translate
+              }}</ion-label>
+              <ion-textarea
+                [attr.aria-label]="'REPORT_MAILING_JOBS.EMAIL_MESSAGE' | translate"
+                name="emailMessage"
+                [(ngModel)]="job().emailMessage"
+              ></ion-textarea>
+            </ion-item>
+
+            <ion-item fill="outline">
+              <ion-label position="stacked">{{
                 'REPORT_MAILING_JOBS.STRETCHY_REPORT_ID' | translate
               }}</ion-label>
-              <ion-input
+              <ion-select
                 [attr.aria-label]="'REPORT_MAILING_JOBS.STRETCHY_REPORT_ID' | translate"
-                type="number"
+                interface="popover"
                 name="stretchyReportId"
+                data-testid="report-mailing-job-report"
                 [(ngModel)]="job().stretchyReportId"
+                required
+              >
+                @for (report of reports(); track report.id) {
+                  <ion-select-option [value]="report.id">{{ report.reportName }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+
+            <ion-item fill="outline">
+              <ion-label position="stacked">{{
+                'REPORT_MAILING_JOBS.ATTACHMENT_FORMAT' | translate
+              }}</ion-label>
+              <ion-select
+                [attr.aria-label]="'REPORT_MAILING_JOBS.ATTACHMENT_FORMAT' | translate"
+                interface="popover"
+                name="emailAttachmentFileFormatId"
+                data-testid="report-mailing-job-format"
+                [(ngModel)]="attachmentFormatId"
+                required
+              >
+                @for (format of attachmentFormats(); track format.id) {
+                  <ion-select-option [value]="format.id">{{ format.value }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+
+            <ion-item fill="outline">
+              <ion-label position="stacked">{{
+                'REPORT_MAILING_JOBS.START_DATE_TIME' | translate
+              }}</ion-label>
+              <ion-input
+                [attr.aria-label]="'REPORT_MAILING_JOBS.START_DATE_TIME' | translate"
+                type="datetime-local"
+                name="startDateTime"
+                data-testid="report-mailing-job-start"
+                [(ngModel)]="startDateTimeLocal"
                 required
               ></ion-input>
             </ion-item>
+
+            <ion-item fill="outline">
+              <ion-label position="stacked">{{
+                'REPORT_MAILING_JOBS.RECURRENCE' | translate
+              }}</ion-label>
+              <ion-select
+                [attr.aria-label]="'REPORT_MAILING_JOBS.RECURRENCE' | translate"
+                interface="popover"
+                name="recurrence"
+                data-testid="report-mailing-job-recurrence"
+                [(ngModel)]="job().recurrence"
+              >
+                @for (option of recurrenceOptions; track option.value) {
+                  <ion-select-option [value]="option.value">{{
+                    option.label | translate
+                  }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+            <ion-note class="field-hint">{{
+              'REPORT_MAILING_JOBS.RECURRENCE_HINT' | translate
+            }}</ion-note>
 
             <ion-checkbox name="isActive" [(ngModel)]="job().isActive">
               {{ 'REPORT_MAILING_JOBS.IS_ACTIVE' | translate }}
@@ -184,6 +328,7 @@ type ReportMailingJobUpdate = PutReportMailingJobsRequest & {
 })
 export class ReportMailingJobsFormComponent implements OnInit {
   private readonly jobsService = inject(ReportMailingJobsService);
+  private readonly reportsService = inject(ReportsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
@@ -198,9 +343,48 @@ export class ReportMailingJobsFormComponent implements OnInit {
     emailRecipients: '',
     emailSubject: '',
     isActive: true,
+    recurrence: DAILY_RECURRENCE,
   });
 
+  /** Reports the job can mail, so the operator picks one instead of recalling its numeric id. */
+  readonly reports = signal<GetReportsResponse[]>([]);
+
+  /** XLS / PDF / CSV, from `GET /reportmailingjobs/template`. */
+  readonly attachmentFormats = signal<EnumOptionData[]>([]);
+  attachmentFormatId?: number;
+
+  /**
+   * Bound to `<input type="datetime-local">`, whose value is always `yyyy-MM-ddTHH:mm`.
+   *
+   * Kept apart from `job().startDateTime` because the platform wants it in the same
+   * `dd MMMM yyyy HH:mm` shape as every other date it is sent, and converting on submit keeps
+   * the control's own format from leaking into the payload.
+   */
+  startDateTimeLocal = '';
+
+  /**
+   * The recurrences worth offering, as iCalendar RRULEs — the format
+   * `POST /reportmailingjobs` expects. A free-text box here would be a way to fail validation.
+   */
+  readonly recurrenceOptions = [
+    { value: DAILY_RECURRENCE, label: 'REPORT_MAILING_JOBS.RECURRENCE_DAILY' },
+    { value: 'FREQ=WEEKLY;INTERVAL=1', label: 'REPORT_MAILING_JOBS.RECURRENCE_WEEKLY' },
+    { value: 'FREQ=MONTHLY;INTERVAL=1', label: 'REPORT_MAILING_JOBS.RECURRENCE_MONTHLY' },
+  ];
+
   ngOnInit(): void {
+    this.reportsService.getReports().subscribe({
+      next: (data) => this.reports.set(data ?? []),
+      error: () => this.reports.set([]),
+    });
+    this.jobsService.getReportmailingjobsTemplate().subscribe({
+      next: (template) => {
+        const options = template.emailAttachmentFileFormatOptions ?? [];
+        this.attachmentFormats.set(options);
+        this.attachmentFormatId ??= options[0]?.id;
+      },
+      error: () => this.attachmentFormats.set([]),
+    });
     this.route.paramMap.subscribe((params) => {
       const id = params.get('id');
       if (id) {
@@ -219,13 +403,18 @@ export class ReportMailingJobsFormComponent implements OnInit {
         description: data.description,
         emailRecipients: data.emailRecipients,
         emailSubject: data.emailSubject,
+        emailMessage: data.emailMessage,
+        recurrence: data.recurrence ?? DAILY_RECURRENCE,
+        stretchyReportId: reportIdOf(data.stretchyReport),
         isActive: data.isActive,
       });
+      this.startDateTimeLocal = toDateTimeLocal(data.startDateTime);
     });
   }
 
   onSubmit(): void {
     this.isSaving.set(true);
+    const startDateTime = toFineractDateTime(this.startDateTimeLocal);
     let request$;
     if (this.isEditMode() && this.jobId) {
       const update: ReportMailingJobUpdate = {
@@ -233,12 +422,25 @@ export class ReportMailingJobsFormComponent implements OnInit {
         description: this.job().description,
         emailRecipients: this.job().emailRecipients,
         emailSubject: this.job().emailSubject,
+        emailMessage: this.job().emailMessage,
         stretchyReportId: this.job().stretchyReportId,
+        emailAttachmentFileFormatId: this.attachmentFormatId,
+        recurrence: this.job().recurrence,
+        ...(startDateTime ? { startDateTime } : {}),
         isActive: this.job().isActive,
+        locale: FINERACT_LOCALE,
+        dateFormat: DATE_TIME_FORMAT,
       };
       request$ = this.jobsService.putReportmailingjobsEntityId(this.jobId, update);
     } else {
-      request$ = this.jobsService.postReportmailingjobs(this.job());
+      const create: ReportMailingJobCreate = {
+        ...this.job(),
+        emailAttachmentFileFormatId: this.attachmentFormatId,
+        ...(startDateTime ? { startDateTime } : {}),
+        locale: FINERACT_LOCALE,
+        dateFormat: DATE_TIME_FORMAT,
+      };
+      request$ = this.jobsService.postReportmailingjobs(create);
     }
 
     request$.subscribe({

@@ -42,6 +42,12 @@ export const SETTINGS_ROUTES: Routes = [
     loadComponent: () => import('./holiday-form.component').then((m) => m.HolidayFormComponent),
   },
   {
+    path: 'holidays/edit/:id',
+    canActivate: [authGuard, permissionGuard],
+    data: { permissions: 'UPDATE_HOLIDAY' },
+    loadComponent: () => import('./holiday-form.component').then((m) => m.HolidayFormComponent),
+  },
+  {
     path: 'working-days',
     canActivate: [authGuard, permissionGuard],
     data: { permissions: 'READ_WORKINGDAYS' },

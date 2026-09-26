@@ -546,7 +546,7 @@ const OPERATION_FAILED_MESSAGE = 'Operation failed. Please try again.';
       }
       .form-grid {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
         gap: 16px;
       }
       .field-container-row {
@@ -643,8 +643,57 @@ export class LoanFormComponent implements OnInit {
     }
     if (!productId) return;
     this.productService.getLoanproductsProductId(productId).subscribe({
-      next: (data: GetLoanProductsProductIdResponse) => this.selectedProductDetails.set(data),
+      next: (data: GetLoanProductsProductIdResponse) => {
+        this.selectedProductDetails.set(data);
+        // Editing an existing loan already has its own values; only a new application is filled in.
+        if (!this.isEditMode()) {
+          this.applyProductDefaults(data);
+        }
+      },
       error: () => this.notifications.error(OPERATION_FAILED_MESSAGE),
+    });
+  }
+
+  /**
+   * Seeds the terms from the product the user just picked.
+   *
+   * The product response was previously kept only for the schedule-type chip, which left every
+   * term field empty after selection — the officer retyped the product's own defaults by hand,
+   * and a slip booked the loan on terms the product never described. This is the same mapping
+   * {@link loadLoanData} performs, sourced from the product rather than from an existing loan.
+   *
+   * Anything the operator has already typed is left alone, so this cannot overwrite deliberate
+   * input when the product is changed after the fact.
+   */
+  private applyProductDefaults(product: GetLoanProductsProductIdResponse): void {
+    const loan = this.loan();
+    const keep = <T>(current: T | undefined, fallback: T | undefined): T | undefined =>
+      current === undefined || current === null || (current as unknown) === '' ? fallback : current;
+
+    this.loan.set({
+      ...loan,
+      principal: keep(loan.principal, product.principal),
+      numberOfRepayments: keep(loan.numberOfRepayments, product.numberOfRepayments),
+      repaymentEvery: keep(loan.repaymentEvery, product.repaymentEvery),
+      repaymentFrequencyType: keep(loan.repaymentFrequencyType, product.repaymentFrequencyType?.id),
+      interestRatePerPeriod: keep(loan.interestRatePerPeriod, product.interestRatePerPeriod),
+      interestType: keep(loan.interestType, product.interestType?.id),
+      amortizationType: keep(loan.amortizationType, product.amortizationType?.id),
+      interestCalculationPeriodType: keep(
+        loan.interestCalculationPeriodType,
+        product.interestCalculationPeriodType?.id,
+      ),
+      transactionProcessingStrategyCode: keep(
+        loan.transactionProcessingStrategyCode,
+        product.transactionProcessingStrategyCode,
+      ),
+      inArrearsTolerance: keep(loan.inArrearsTolerance, product.inArrearsTolerance),
+      graceOnPrincipalPayment: keep(loan.graceOnPrincipalPayment, product.graceOnPrincipalPayment),
+      graceOnInterestPayment: keep(loan.graceOnInterestPayment, product.graceOnInterestPayment),
+      // The loan term defaults to covering every repayment, which is what the product implies
+      // when it states a count and a period but no separate term.
+      loanTermFrequency: keep(loan.loanTermFrequency, product.numberOfRepayments),
+      loanTermFrequencyType: keep(loan.loanTermFrequencyType, product.repaymentFrequencyType?.id),
     });
   }
 

@@ -147,6 +147,46 @@ export const SYSTEM_ROUTES: Routes = [
       ),
   },
   {
+    path: 'delinquency/ranges/create',
+    canActivate: [authGuard, permissionGuard],
+    data: { permissions: 'CREATE_DELINQUENCY_RANGE' },
+    title: 'SYSTEM.CREATE_RANGE',
+    loadComponent: () =>
+      import('./delinquency/delinquency-range-form.component').then(
+        (m) => m.DelinquencyRangeFormComponent,
+      ),
+  },
+  {
+    path: 'delinquency/ranges/edit/:id',
+    canActivate: [authGuard, permissionGuard],
+    data: { permissions: 'UPDATE_DELINQUENCY_RANGE' },
+    title: 'SYSTEM.EDIT_RANGE',
+    loadComponent: () =>
+      import('./delinquency/delinquency-range-form.component').then(
+        (m) => m.DelinquencyRangeFormComponent,
+      ),
+  },
+  {
+    path: 'delinquency/buckets/create',
+    canActivate: [authGuard, permissionGuard],
+    data: { permissions: 'CREATE_DELINQUENCY_BUCKET' },
+    title: 'SYSTEM.CREATE_BUCKET',
+    loadComponent: () =>
+      import('./delinquency/delinquency-bucket-form.component').then(
+        (m) => m.DelinquencyBucketFormComponent,
+      ),
+  },
+  {
+    path: 'delinquency/buckets/edit/:id',
+    canActivate: [authGuard, permissionGuard],
+    data: { permissions: 'UPDATE_DELINQUENCY_BUCKET' },
+    title: 'SYSTEM.EDIT_BUCKET',
+    loadComponent: () =>
+      import('./delinquency/delinquency-bucket-form.component').then(
+        (m) => m.DelinquencyBucketFormComponent,
+      ),
+  },
+  {
     path: 'credit-bureau-config',
     canActivate: [authGuard, permissionGuard],
     data: { permissions: 'UPDATE_CREDITBUREAU_CONFIGURATION' },

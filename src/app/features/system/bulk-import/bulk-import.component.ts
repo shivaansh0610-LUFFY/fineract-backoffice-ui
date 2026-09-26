@@ -92,6 +92,7 @@ import {
               <ion-select
                 [attr.aria-label]="'SYSTEM.ENTITY_TYPE' | translate"
                 interface="popover"
+                data-testid="bulk-import-entity-type"
                 [(ngModel)]="selectedEntity"
                 (ionChange)="onEntityChange()"
               >
@@ -232,29 +233,54 @@ export class BulkImportComponent implements OnInit {
    * entries file was a copy-paste of the wrong service, not a deliberate choice. `journalentries`
    * is its own, separate entry here, wired to the endpoint `glaccounts` was wrongly borrowing.
    */
-  entityTypes = [
-    { label: 'nav.clients', value: 'clients' },
+  /**
+   * `value` is this screen's own key — it selects the template and upload endpoints below.
+   *
+   * `importType` is what `GET /imports?entityType=` accepts, and it is *not* always the same
+   * word: the platform answers 404 for `clients`, `savingsaccounts`, `glaccounts`,
+   * `journalentries`, `recurringdepositaccounts`, `loanrepayments` and
+   * `recurringdeposittransactions`, which is every entry that carries one here. Selecting any of
+   * those left the import history empty with the 404 going only to the console. Where the two
+   * agree, `importType` is omitted and `value` is used.
+   */
+  entityTypes: { label: string; value: string; importType?: string }[] = [
+    { label: 'nav.clients', value: 'clients', importType: 'client' },
     { label: 'nav.loans', value: 'loans' },
-    { label: 'nav.savingsAccounts', value: 'savingsaccounts' },
-    { label: 'nav.chartOfAccounts', value: 'glaccounts' },
-    { label: 'nav.journalEntries', value: 'journalentries' },
+    { label: 'nav.savingsAccounts', value: 'savingsaccounts', importType: 'savingsaccount' },
+    { label: 'nav.chartOfAccounts', value: 'glaccounts', importType: 'chartofaccounts' },
+    { label: 'nav.journalEntries', value: 'journalentries', importType: 'gljournalentries' },
     { label: 'nav.offices', value: 'offices' },
     { label: 'nav.users', value: 'users' },
     { label: 'nav.groups', value: 'groups' },
     { label: 'nav.centers', value: 'centers' },
     { label: 'nav.staff', value: 'staff' },
     { label: 'nav.fixedDeposits', value: 'fixeddepositaccounts' },
-    { label: 'nav.recurringDeposits', value: 'recurringdepositaccounts' },
+    {
+      label: 'nav.recurringDeposits',
+      value: 'recurringdepositaccounts',
+      importType: 'recurringdeposits',
+    },
     { label: 'nav.shares', value: 'shareaccounts' },
-    { label: 'SYSTEM.BULK_IMPORT_LOAN_REPAYMENTS', value: 'loanrepayments' },
+    {
+      label: 'SYSTEM.BULK_IMPORT_LOAN_REPAYMENTS',
+      value: 'loanrepayments',
+      importType: 'loantransactions',
+    },
     { label: 'SYSTEM.BULK_IMPORT_SAVINGS_TRANSACTIONS', value: 'savingstransactions' },
     { label: 'SYSTEM.BULK_IMPORT_FIXED_DEPOSIT_TRANSACTIONS', value: 'fixeddeposittransactions' },
     {
       label: 'SYSTEM.BULK_IMPORT_RECURRING_DEPOSIT_TRANSACTIONS',
       value: 'recurringdeposittransactions',
+      importType: 'recurringdepositstransactions',
     },
     { label: 'SYSTEM.BULK_IMPORT_GUARANTORS', value: 'guarantors' },
   ];
+
+  /** The word the platform knows the selected entity by, which is not always our own key. */
+  private importEntityType(): string {
+    const entity = this.entityTypes.find((candidate) => candidate.value === this.selectedEntity);
+    return entity?.importType ?? this.selectedEntity;
+  }
 
   /** Entity types whose template is scoped to one loan rather than to the whole tenant. */
   private readonly loanScopedEntities = new Set(['guarantors']);
@@ -289,7 +315,7 @@ export class BulkImportComponent implements OnInit {
 
   loadImportHistory(): void {
     this.isLoading.set(true);
-    this.bulkImportService.getImports(this.selectedEntity).subscribe({
+    this.bulkImportService.getImports(this.importEntityType()).subscribe({
       next: (data: unknown) => {
         const result = (typeof data === 'string' ? JSON.parse(data) : data) as Record<
           string,

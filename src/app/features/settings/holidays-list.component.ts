@@ -142,6 +142,11 @@ export class ConfirmDialogComponent {
         <app-status-badge [status]="holiday.status"></app-status-badge>
       </ng-template>
 
+      <!--
+        Edit and delete are offered only while the holiday is pending activation, which is the
+        only state the platform accepts either command in. Before this the list had neither, so a
+        holiday entered with the wrong dates was permanent — and holidays move repayment dates.
+      -->
       <ng-template appCellTemplate="actions" let-holiday>
         @if (holiday.status?.code === 'holidayStatusType.pending.for.activation') {
           <ion-button
@@ -152,6 +157,26 @@ export class ConfirmDialogComponent {
             (click)="onActivateHoliday(holiday)"
           >
             <ion-icon name="checkmark-circle-outline"></ion-icon>
+          </ion-button>
+          <ion-button
+            fill="clear"
+            color="primary"
+            data-testid="holiday-edit"
+            [attr.aria-label]="'COMMON.EDIT' | translate"
+            [appTooltip]="'COMMON.EDIT' | translate"
+            (click)="onEditHoliday(holiday)"
+          >
+            <ion-icon name="create-outline"></ion-icon>
+          </ion-button>
+          <ion-button
+            fill="clear"
+            color="danger"
+            data-testid="holiday-delete"
+            [attr.aria-label]="'COMMON.DELETE' | translate"
+            [appTooltip]="'COMMON.DELETE' | translate"
+            (click)="onDeleteHoliday(holiday)"
+          >
+            <ion-icon name="trash-outline"></ion-icon>
           </ion-button>
         }
       </ng-template>
@@ -260,6 +285,38 @@ export class HolidaysListComponent implements OnInit {
             },
           });
         }
+      });
+  }
+
+  onEditHoliday(holiday: GetHolidaysResponse): void {
+    void this.router.navigate(['/settings/holidays/edit', holiday.id]);
+  }
+
+  onDeleteHoliday(holiday: GetHolidaysResponse): Promise<void> {
+    return this.dialogService
+      .open(ConfirmDialogComponent, {
+        data: {
+          title: 'HOLIDAYS.DELETE_TITLE',
+          message: 'HOLIDAYS.DELETE_CONFIRM',
+          params: { name: holiday.name },
+        },
+      })
+      .then((result) => {
+        if (!result) {
+          return;
+        }
+        this.isLoading.set(true);
+        this.holidaysService.deleteHolidaysHolidayId(holiday.id!).subscribe({
+          next: () => {
+            this.notifications.success('Holiday deleted successfully');
+            this.loadHolidays();
+          },
+          error: (err) => {
+            this.isLoading.set(false);
+            console.error('Failed to delete holiday', err);
+            this.notifications.error('Failed to delete holiday');
+          },
+        });
       });
   }
 

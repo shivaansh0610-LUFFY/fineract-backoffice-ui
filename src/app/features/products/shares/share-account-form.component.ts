@@ -289,7 +289,7 @@ interface ShareAccountTemplateResponse {
       }
       .form-grid {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
         gap: 16px;
       }
       .select-search-container {

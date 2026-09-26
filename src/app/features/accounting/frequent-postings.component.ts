@@ -247,7 +247,7 @@ import { createPickersReady } from '../../shared/utils/pickers-ready';
       }
       .form-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
         gap: 16px;
         margin-bottom: 16px;
       }

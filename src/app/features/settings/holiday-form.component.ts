@@ -18,7 +18,7 @@
  */
 
 import { Component, OnInit, inject, signal } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { TranslateModule } from '@ngx-translate/core';
 import { NotificationService } from '../../core/services/notification.service';
@@ -45,9 +45,24 @@ import {
   HolidaysService,
   OfficesService,
   PostHolidaysRequest,
+  PutHolidaysHolidayIdRequest,
   GetOfficesResponse,
 } from '../../api';
 import { createPickersReady } from '../../shared/utils/pickers-ready';
+
+/**
+ * The `YYYY-MM-DD` an `ion-datetime` binds to.
+ *
+ * The platform sends dates as `[year, month, day]` arrays here despite the generated model typing
+ * them as strings, so both shapes are handled; anything else yields an empty picker rather than a
+ * date the user did not choose.
+ */
+function pickerDate(value: unknown): string | null {
+  if (Array.isArray(value) && value.length >= 3) {
+    return `${value[0]}-${String(value[1]).padStart(2, '0')}-${String(value[2]).padStart(2, '0')}`;
+  }
+  return typeof value === 'string' && value ? value.split('T', 1)[0] : null;
+}
 
 @Component({
   selector: 'app-holiday-form',
@@ -267,7 +282,7 @@ import { createPickersReady } from '../../shared/utils/pickers-ready';
       }
       .form-grid {
         display: grid;
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
         gap: 16px;
       }
       .full-width {
@@ -282,12 +297,22 @@ export class HolidayFormComponent implements OnInit {
 
   private readonly holidaysService = inject(HolidaysService);
   private readonly officesService = inject(OfficesService);
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly notifications = inject(NotificationService);
 
   private readonly LIST_PATH = '/settings/holidays';
 
   readonly isSaving = signal(false);
+  /**
+   * True when editing an existing holiday.
+   *
+   * The platform only accepts an update while the holiday is still pending activation, which is
+   * the same condition the list uses to offer the action, so this screen is never reached for an
+   * active one.
+   */
+  readonly isEditMode = signal(false);
+  private holidayId?: number;
   holiday: PostHolidaysRequest = {};
   fromDate: string | null = null;
   toDate: string | null = null;
@@ -301,6 +326,34 @@ export class HolidayFormComponent implements OnInit {
   ngOnInit(): void {
     this.loadOffices();
     this.loadReschedulingOptions();
+
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) {
+      this.holidayId = Number(id);
+      this.isEditMode.set(true);
+      this.loadHoliday();
+    }
+  }
+
+  private loadHoliday(): void {
+    if (!this.holidayId) {
+      return;
+    }
+    this.holidaysService.getHolidaysHolidayId(this.holidayId).subscribe({
+      next: (data) => {
+        this.holiday = { name: data.name };
+        this.fromDate = pickerDate(data.fromDate);
+        this.toDate = pickerDate(data.toDate);
+        this.repaymentsRescheduledTo = pickerDate(data.repaymentsRescheduledTo);
+        // A holiday that names a date to move repayments to was created with that rule; one that
+        // does not carries the "next repayment date" rule instead.
+        this.reschedulingType = this.repaymentsRescheduledTo ? 2 : 1;
+        if (typeof data.officeId === 'number') {
+          this.selectedOfficeIds = [data.officeId];
+        }
+      },
+      error: () => this.notifications.error('Failed to load holiday'),
+    });
   }
 
   private loadOffices(): void {
@@ -363,14 +416,24 @@ export class HolidayFormComponent implements OnInit {
       payload['repaymentsRescheduledTo'] = formatDateToFineract(this.repaymentsRescheduledTo);
     }
 
-    this.holidaysService.postHolidays(payload as PostHolidaysRequest).subscribe({
+    const request$ =
+      this.isEditMode() && this.holidayId
+        ? this.holidaysService.putHolidaysHolidayId(
+            this.holidayId,
+            payload as PutHolidaysHolidayIdRequest,
+          )
+        : this.holidaysService.postHolidays(payload as PostHolidaysRequest);
+
+    request$.subscribe({
       next: () => {
-        this.notifications.success('Holiday created successfully');
+        this.notifications.success(
+          this.isEditMode() ? 'Holiday updated successfully' : 'Holiday created successfully',
+        );
         this.router.navigate([this.LIST_PATH]);
       },
       error: (err) => {
         this.isSaving.set(false);
-        console.error('Failed to create holiday', err);
+        console.error('Failed to save holiday', err);
       },
     });
   }

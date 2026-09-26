@@ -20,9 +20,13 @@
 import { createSpyObj, SpyObj } from '../../../testing/mocks';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { InterestRateChartsListComponent } from './interest-rate-charts-list.component';
-import { InterestRateChartService } from '../../../api';
+import {
+  FixedDepositProductService,
+  InterestRateChartService,
+  RecurringDepositProductService,
+} from '../../../api';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { provideTranslateTesting } from '../../../testing/i18n-testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { DialogService } from '../../../core/services/dialog.service';
@@ -31,11 +35,27 @@ describe('InterestRateChartsListComponent', () => {
   let component: InterestRateChartsListComponent;
   let fixture: ComponentFixture<InterestRateChartsListComponent>;
   let serviceSpy: SpyObj<InterestRateChartService>;
+  let fixedProductsSpy: SpyObj<FixedDepositProductService>;
+  let recurringProductsSpy: SpyObj<RecurringDepositProductService>;
   let routerSpy: SpyObj<Router>;
   let dialogService: SpyObj<DialogService>;
 
   beforeEach(async () => {
     serviceSpy = createSpyObj(['getInterestratecharts', 'deleteInterestratechartsChartId']);
+    // Charts belong to deposit products, and the platform 500s on a bare list, so the screen
+    // asks each product for its own.
+    fixedProductsSpy = createSpyObj(['getFixeddepositproducts']);
+    recurringProductsSpy = createSpyObj(['getRecurringdepositproducts']);
+    fixedProductsSpy.getFixeddepositproducts.mockReturnValue(
+      of([{ id: 11, name: 'Fixed A' }]) as unknown as ReturnType<
+        FixedDepositProductService['getFixeddepositproducts']
+      >,
+    );
+    recurringProductsSpy.getRecurringdepositproducts.mockReturnValue(
+      of([]) as unknown as ReturnType<
+        RecurringDepositProductService['getRecurringdepositproducts']
+      >,
+    );
     routerSpy = createSpyObj(['navigate']);
     dialogService = createSpyObj(['confirm']);
     dialogService.confirm.mockResolvedValue(true);
@@ -50,6 +70,8 @@ describe('InterestRateChartsListComponent', () => {
       providers: [
         ...provideTranslateTesting(),
         { provide: InterestRateChartService, useValue: serviceSpy },
+        { provide: FixedDepositProductService, useValue: fixedProductsSpy },
+        { provide: RecurringDepositProductService, useValue: recurringProductsSpy },
         { provide: Router, useValue: routerSpy },
         { provide: DialogService, useValue: dialogService },
         provideNoopAnimations(),
@@ -61,10 +83,28 @@ describe('InterestRateChartsListComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should load charts on init', () => {
+  it('should load charts on init, naming the product each time', async () => {
+    await fixture.whenStable();
+
     expect(component).toBeTruthy();
-    expect(serviceSpy.getInterestratecharts).toHaveBeenCalled();
+    // The defect this replaces: a bare call, which the platform answers with a 500.
+    expect(serviceSpy.getInterestratecharts).toHaveBeenCalledWith(11);
+    expect(serviceSpy.getInterestratecharts).not.toHaveBeenCalledWith(undefined);
     expect(component.charts()).toHaveLength(1);
+  });
+
+  it('keeps the rest of the table when one product refuses', async () => {
+    serviceSpy.getInterestratecharts.mockReturnValue(
+      throwError(() => new Error('boom')) as unknown as ReturnType<
+        InterestRateChartService['getInterestratecharts']
+      >,
+    );
+
+    component.load();
+    await fixture.whenStable();
+
+    expect(component.charts()).toEqual([]);
+    expect(component.loadFailed()).toBe(false);
   });
 
   it('should navigate to a chart slabs view', () => {
@@ -78,6 +118,8 @@ describe('InterestRateChartsListComponent', () => {
   });
 
   it('should delete after confirmation and reload', async () => {
+    await fixture.whenStable();
+
     serviceSpy.deleteInterestratechartsChartId.mockReturnValue(
       of({}) as unknown as ReturnType<InterestRateChartService['deleteInterestratechartsChartId']>,
     );
@@ -87,6 +129,7 @@ describe('InterestRateChartsListComponent', () => {
     await fixture.whenStable();
 
     expect(serviceSpy.deleteInterestratechartsChartId).toHaveBeenCalledWith(5);
+    // Once on init, once after the delete — one call per product each time.
     expect(serviceSpy.getInterestratecharts).toHaveBeenCalledTimes(2);
   });
 

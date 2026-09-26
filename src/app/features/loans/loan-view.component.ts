@@ -1869,25 +1869,21 @@ export class LoanViewComponent implements OnInit {
         // Only ask for what this loan can actually have. Both are progressive-engine features:
         // fetching them for every loan meant two guaranteed-useless requests per cumulative loan
         // view, with their failures swallowed so nothing ever surfaced the waste.
-        if (data.externalId && data.enableBuyDownFee) {
-          this.buyDownFeesService
-            .getLoansExternalIdLoanExternalIdBuydownFees(data.externalId)
-            .subscribe({
-              next: (fees) => this.buyDownFees.set(fees ?? []),
-              error: () => {
-                /* ignored */
-              },
-            });
+        // Addressed by loan id, not external id. Both tabs used the `/loans/external-id/…`
+        // endpoints and so were gated on the loan *having* an external id — which is optional,
+        // so on a loan without one the tab still appeared (it keys off `enable…` alone) and sat
+        // permanently empty. The `enable…` flags are what keep this from being a wasted request.
+        if (data.enableBuyDownFee) {
+          this.buyDownFeesService.getLoansLoanIdBuydownFees(this.loanId()).subscribe({
+            next: (fees) => this.buyDownFees.set(fees ?? []),
+            error: () => this.buyDownFees.set([]),
+          });
         }
-        if (data.externalId && data.enableIncomeCapitalization) {
-          this.capitalizedIncomeService
-            .getLoansExternalIdLoanExternalIdCapitalizedIncomes(data.externalId)
-            .subscribe({
-              next: (items) => this.capitalizedIncomes.set(items ?? []),
-              error: () => {
-                /* ignored */
-              },
-            });
+        if (data.enableIncomeCapitalization) {
+          this.capitalizedIncomeService.getLoansLoanIdCapitalizedIncomes(this.loanId()).subscribe({
+            next: (items) => this.capitalizedIncomes.set(items ?? []),
+            error: () => this.capitalizedIncomes.set([]),
+          });
         }
       },
       error: (err) => console.error('Failed to load loan data', err),

@@ -193,7 +193,14 @@
     "deleteDelinquencyBucketsDelinquencyBucketId",
     "deleteDelinquencyRangesDelinquencyRangeId",
     "getDelinquencyBuckets",
-    "getDelinquencyRanges"
+    "getDelinquencyBucketsDelinquencyBucketId",
+    "getDelinquencyBucketsTemplate",
+    "getDelinquencyRanges",
+    "getDelinquencyRangesDelinquencyRangeId",
+    "postDelinquencyBuckets",
+    "postDelinquencyRanges",
+    "putDelinquencyBucketsDelinquencyBucketId",
+    "putDelinquencyRangesDelinquencyRangeId"
   ],
   "DepositAccountOnHoldFundTransactionsService": ["getSavingsaccountsSavingsIdOnholdtransactions"],
   "DocumentsService": [
@@ -297,10 +304,13 @@
     "putLoansLoanIdGuarantorsGuarantorId"
   ],
   "HolidaysService": [
+    "deleteHolidaysHolidayId",
     "getHolidays",
+    "getHolidaysHolidayId",
     "getHolidaysTemplate",
     "postHolidays",
-    "postHolidaysHolidayId"
+    "postHolidaysHolidayId",
+    "putHolidaysHolidayId"
   ],
   "HooksService": [
     "deleteHooksHookId",
@@ -361,13 +371,13 @@
   "LikelihoodService": ["getLikelihoodPpiName", "putLikelihoodPpiNameLikelihoodId"],
   "ListReportMailingJobHistoryService": ["getReportmailingjobrunhistory"],
   "LoanAccountLockService": ["getLoansLocked", "postInternalLoansLoanIdPlaceLockLockOwner"],
-  "LoanBuyDownFeesService": ["getLoansExternalIdLoanExternalIdBuydownFees"],
+  "LoanBuyDownFeesService": ["getLoansLoanIdBuydownFees"],
   "LoanCOBCatchUpService": [
     "getLoansIsCatchUpRunning",
     "getLoansOldestCobClosed",
     "postLoansCatchUp"
   ],
-  "LoanCapitalizedIncomeService": ["getLoansExternalIdLoanExternalIdCapitalizedIncomes"],
+  "LoanCapitalizedIncomeService": ["getLoansLoanIdCapitalizedIncomes"],
   "LoanChargesService": [
     "deleteLoansLoanIdChargesLoanChargeId",
     "getLoansLoanIdCharges",
@@ -546,6 +556,7 @@
     "deleteReportmailingjobsEntityId",
     "getReportmailingjobs",
     "getReportmailingjobsEntityId",
+    "getReportmailingjobsTemplate",
     "postReportmailingjobs",
     "putReportmailingjobsEntityId"
   ],

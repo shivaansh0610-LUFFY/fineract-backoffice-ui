@@ -44,6 +44,7 @@ import { LOAN_SCHEDULE_TYPE } from '../products/loan-schedule-type';
 
 const PRODUCT_NAME = 'Micro Loan Product';
 const EXTERNAL_ID = 'ext-456';
+const LOAN_ID = 456;
 
 describe('LoanViewComponent', () => {
   let component: LoanViewComponent;
@@ -76,8 +77,8 @@ describe('LoanViewComponent', () => {
     TestBed.resetTestingModule();
 
     loansServiceSpy = createSpyObj(['getLoansLoanId']);
-    buyDownFeesSpy = createSpyObj(['getLoansExternalIdLoanExternalIdBuydownFees']);
-    capitalizedIncomeSpy = createSpyObj(['getLoansExternalIdLoanExternalIdCapitalizedIncomes']);
+    buyDownFeesSpy = createSpyObj(['getLoansLoanIdBuydownFees']);
+    capitalizedIncomeSpy = createSpyObj(['getLoansLoanIdCapitalizedIncomes']);
     routerSpy = createSpyObj(['navigate']);
     transactionsSpy = createSpyObj(['postLoansLoanIdTransactions']);
     transactionsSpy.postLoansLoanIdTransactions.mockReturnValue(of({}) as any);
@@ -103,10 +104,8 @@ describe('LoanViewComponent', () => {
     loansServiceSpy.getLoansLoanId.mockReturnValue(
       of({ ...cumulativeLoan, ...loanOverrides }) as any,
     );
-    buyDownFeesSpy.getLoansExternalIdLoanExternalIdBuydownFees.mockReturnValue(of([]) as any);
-    capitalizedIncomeSpy.getLoansExternalIdLoanExternalIdCapitalizedIncomes.mockReturnValue(
-      of([]) as any,
-    );
+    buyDownFeesSpy.getLoansLoanIdBuydownFees.mockReturnValue(of([]) as any);
+    capitalizedIncomeSpy.getLoansLoanIdCapitalizedIncomes.mockReturnValue(of([]) as any);
 
     await TestBed.configureTestingModule({
       imports: [LoanViewComponent, TranslateModule.forRoot()],
@@ -165,10 +164,8 @@ describe('LoanViewComponent', () => {
     });
 
     it('does not request data it knows cannot exist', () => {
-      expect(buyDownFeesSpy.getLoansExternalIdLoanExternalIdBuydownFees).not.toHaveBeenCalled();
-      expect(
-        capitalizedIncomeSpy.getLoansExternalIdLoanExternalIdCapitalizedIncomes,
-      ).not.toHaveBeenCalled();
+      expect(buyDownFeesSpy.getLoansLoanIdBuydownFees).not.toHaveBeenCalled();
+      expect(capitalizedIncomeSpy.getLoansLoanIdCapitalizedIncomes).not.toHaveBeenCalled();
     });
 
     it('falls back to the overview if such a tab is somehow selected', () => {
@@ -188,12 +185,10 @@ describe('LoanViewComponent', () => {
 
       expect(component.showBuyDownFees()).toBe(true);
       expect(component.showCapitalizedIncome()).toBe(false);
-      expect(buyDownFeesSpy.getLoansExternalIdLoanExternalIdBuydownFees).toHaveBeenCalledWith(
-        EXTERNAL_ID,
-      );
-      expect(
-        capitalizedIncomeSpy.getLoansExternalIdLoanExternalIdCapitalizedIncomes,
-      ).not.toHaveBeenCalled();
+      // Addressed by loan id. Using the external-id endpoint meant the fetch was gated on the
+      // loan having one, so the tab appeared and stayed empty on every loan without.
+      expect(buyDownFeesSpy.getLoansLoanIdBuydownFees).toHaveBeenCalledWith(LOAN_ID);
+      expect(capitalizedIncomeSpy.getLoansLoanIdCapitalizedIncomes).not.toHaveBeenCalled();
     });
 
     it('shows the capitalised income tab and fetches it', async () => {
@@ -204,9 +199,24 @@ describe('LoanViewComponent', () => {
 
       expect(component.showCapitalizedIncome()).toBe(true);
       expect(component.showBuyDownFees()).toBe(false);
-      expect(
-        capitalizedIncomeSpy.getLoansExternalIdLoanExternalIdCapitalizedIncomes,
-      ).toHaveBeenCalledWith(EXTERNAL_ID);
+      expect(capitalizedIncomeSpy.getLoansLoanIdCapitalizedIncomes).toHaveBeenCalledWith(LOAN_ID);
+    });
+
+    /**
+     * The regression this pair of tabs shipped with: the fetch was gated on `data.externalId`
+     * while the tab itself keyed off `enable…` alone. External ids are optional, so a loan
+     * without one showed the tab and never populated it, and the error handler was a no-op.
+     */
+    it('fetches for a loan that has no external id', async () => {
+      await setup({
+        loanScheduleType: { code: LOAN_SCHEDULE_TYPE.PROGRESSIVE, value: 'Progressive' },
+        enableBuyDownFee: true,
+        enableIncomeCapitalization: true,
+        externalId: undefined,
+      });
+
+      expect(buyDownFeesSpy.getLoansLoanIdBuydownFees).toHaveBeenCalledWith(LOAN_ID);
+      expect(capitalizedIncomeSpy.getLoansLoanIdCapitalizedIncomes).toHaveBeenCalledWith(LOAN_ID);
     });
 
     it('keeps the tab selectable once it is available', async () => {
@@ -219,13 +229,6 @@ describe('LoanViewComponent', () => {
       fixture.detectChanges();
 
       expect(component.activeTab()).toBe(LOAN_TAB.buyDownFees);
-    });
-
-    it('still skips the request when the loan has no external id to fetch by', async () => {
-      await setup({ enableBuyDownFee: true, externalId: undefined });
-
-      expect(component.showBuyDownFees()).toBe(true);
-      expect(buyDownFeesSpy.getLoansExternalIdLoanExternalIdBuydownFees).not.toHaveBeenCalled();
     });
   });
 
